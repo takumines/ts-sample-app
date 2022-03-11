@@ -5,10 +5,32 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
-// Project State Management
-class ProjectState {
+var ProjectStatus;
+(function (ProjectStatus) {
+    ProjectStatus[ProjectStatus["Active"] = 0] = "Active";
+    ProjectStatus[ProjectStatus["Finished"] = 1] = "Finished";
+})(ProjectStatus || (ProjectStatus = {}));
+class Project {
+    constructor(id, title, description, manday, status) {
+        this.id = id;
+        this.title = title;
+        this.description = description;
+        this.manday = manday;
+        this.status = status;
+    }
+}
+class State {
     constructor() {
         this.listeners = [];
+    }
+    // イベントを追加する
+    addListener(listenerFn) {
+        this.listeners.push(listenerFn);
+    }
+}
+class ProjectState extends State {
+    constructor() {
+        super();
         this.projects = [];
     }
     static getInstance() {
@@ -18,18 +40,9 @@ class ProjectState {
         this.instance = new ProjectState();
         return this.instance;
     }
-    // イベントを追加する
-    addListener(listenerFn) {
-        this.listeners.push(listenerFn);
-    }
     // projectを一覧に追加する
     addProject(title, description, manday) {
-        const newProject = {
-            id: Math.random().toString(),
-            title: title,
-            description: description,
-            manday: manday,
-        };
+        const newProject = new Project(Math.random().toString(), title, description, manday, ProjectStatus.Active);
         this.projects.push(newProject);
         // イベントを全て実行する
         for (const listenerFn of this.listeners) {
@@ -75,34 +88,45 @@ function autobind(_, _2, descriptor) {
     };
     return adjDescriptor;
 }
-// ProjectList Class
-class ProjectList {
-    constructor(type) {
-        this.type = type;
-        this.templateElement = document.getElementById('project-list');
-        this.hostElement = document.getElementById('app');
-        // project一覧の初期化
-        this.assignedProjects = [];
+// Component Class
+class Component {
+    constructor(templateId, hostElementId, insertAtStart, newElementId) {
+        this.templateElement = document.getElementById(templateId);
+        this.hostElement = document.getElementById(hostElementId);
         const importedNode = document.importNode(this.templateElement.content, true);
         this.element = importedNode.firstElementChild;
-        this.element.id = `${this.type}-projects`;
-        // フォームに入力された案件を一覧に表示する処理
-        projectState.addListener((projects) => {
-            this.assignedProjects = projects;
-            this.renderProjects();
-        });
-        this.attach();
+        if (newElementId) {
+            this.element.id = newElementId;
+        }
+        this.attach(insertAtStart);
+    }
+    attach(insertAtBeginning) {
+        // id: appをもつdivタグにコンテンツをマウントする
+        this.hostElement.insertAdjacentElement(insertAtBeginning ? 'afterbegin' : 'beforeend', this.element);
+    }
+}
+// ProjectList Class
+class ProjectList extends Component {
+    constructor(type) {
+        super('project-list', 'app', false, `${type}-projects`);
+        this.type = type;
+        // project一覧の初期化
+        this.assignedProjects = [];
+        this.configure();
         this.renderContent();
     }
-    // 一覧に案件を表示
-    renderProjects() {
-        const listEl = document.getElementById(`${this.type}-projects-list`);
-        for (const prjItem of this.assignedProjects) {
-            console.log(prjItem);
-            const listItem = document.createElement('li');
-            listItem.textContent = prjItem.title;
-            listEl.appendChild(listItem);
-        }
+    configure() {
+        // フォームに入力された案件を一覧に表示する処理
+        projectState.addListener((projects) => {
+            const relevantProjects = projects.filter(prj => {
+                if (this.type === 'active') {
+                    return prj.status === ProjectStatus.Active;
+                }
+                return prj.status === ProjectStatus.Finished;
+            });
+            this.assignedProjects = relevantProjects;
+            this.renderProjects();
+        });
     }
     // 一覧要素を表示
     renderContent() {
@@ -111,29 +135,33 @@ class ProjectList {
         this.element.querySelector('h2').textContent = this.type === 'active' ?
             '実行中プロジェクト' : '完了プロジェクト';
     }
-    attach() {
-        // id: appをもつdivタグにコンテンツをマウントする
-        this.hostElement.insertAdjacentElement('beforeend', this.element);
+    // 一覧に案件を表示
+    renderProjects() {
+        const listEl = document.getElementById(`${this.type}-projects-list`);
+        // 一旦一覧に表示している案件を削除する。
+        listEl.innerHTML = '';
+        for (const prjItem of this.assignedProjects) {
+            const listItem = document.createElement('li');
+            listItem.textContent = prjItem.title;
+            listEl.appendChild(listItem);
+        }
     }
 }
 // ProjectInput Class
-class ProjectInput {
+class ProjectInput extends Component {
     constructor() {
-        // id: project-inputのtemplateタグのDOM情報を取得
-        this.templateElement = document.getElementById('project-input');
-        // id: appのdivタグのDOM情報を取得
-        this.hostElement = document.getElementById('app');
-        // templateElementプロパティに格納されたDOMのコンテンツをインポートしてくる
-        const importedNode = document.importNode(this.templateElement.content, true);
-        this.element = importedNode.firstElementChild;
-        // idを追加している
-        this.element.id = 'user-input';
+        super('project-input', 'app', true, 'user-input');
         // フォームの入力情報の取得処理
         this.titleInputElement = this.element.querySelector('#title');
         this.descriptionInputElement = this.element.querySelector('#description');
         this.mandayInputElement = this.element.querySelector('#manday');
         this.configure();
-        this.attach();
+    }
+    renderContent() { }
+    // イベントリスナーの設定
+    configure() {
+        // bindメソッドで参照するオブジェクトを指定している
+        this.element.addEventListener('submit', this.submitHandler);
     }
     // フォームの値を初期化する
     clearInputs() {
@@ -180,15 +208,6 @@ class ProjectInput {
             projectState.addProject(title, desc, manday);
             this.clearInputs();
         }
-    }
-    // イベントリスナーの設定
-    configure() {
-        // bindメソッドで参照するオブジェクトを指定している
-        this.element.addEventListener('submit', this.submitHandler);
-    }
-    attach() {
-        // id: appをもつdivタグにコンテンツをマウントする
-        this.hostElement.insertAdjacentElement('afterbegin', this.element);
     }
 }
 __decorate([
